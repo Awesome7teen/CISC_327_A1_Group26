@@ -97,7 +97,7 @@ def test_missing_renter_returns_error(client, method):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Renter not found"}
-    
+
 
 def test_list_rentals_preserves_active_and_returned_records(client):
     equipment = create_equipment(client)
@@ -160,3 +160,99 @@ def test_filter_rentals_by_equipment_excludes_other_equipment(client):
     records = response.get_json()
     assert [r["id"] for r in records] == [expected["id"]]
     assert all(r["equipment_id"] == first["id"] for r in records)
+
+
+def test_extend_rental_saves_new_due_date(client):
+    equipment = create_equipment(client)
+    renter = create_renter(client)
+    rental = checkout(client, equipment, renter)
+    original_due_date = date.fromisoformat(rental["due_date"])
+
+    response = client.put(
+        f"/rentals/{rental['id']}/extend",
+        json={"days": 3},
+    )
+    assert response.status_code == 200
+
+    saved = get_saved_rental(client, rental["id"])
+    new_due_date = date.fromisoformat(saved["due_date"])
+
+    assert (new_due_date - original_due_date).days == 3
+    assert saved["due_date"] == response.get_json()["due_date"]
+    assert saved["return_date"] is None
+    assert client.get(
+        f"/equipment/{equipment['id']}"
+    ).get_json()["available_units"] == 2
+
+
+def test_returned_rental_cannot_be_extended(client):
+    equipment = create_equipment(client)
+    renter = create_renter(client)
+    rental = checkout(client, equipment, renter)
+
+    assert client.put(
+        f"/rentals/{rental['id']}/return"
+    ).status_code == 200
+
+    response = client.put(
+        f"/rentals/{rental['id']}/extend",
+        json={"days": 3},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Rental already returned"}
+    assert get_saved_rental(
+        client, rental["id"]
+    )["due_date"] == rental["due_date"]
+
+
+def test_deposit_release_is_saved_after_return(client):
+    """Expected to fail: release responds True but does not save the flag."""
+    equipment = create_equipment(client)
+    renter = create_renter(client)
+    rental = checkout(client, equipment, renter, deposit_amount=50)
+
+    assert client.put(
+        f"/rentals/{rental['id']}/return"
+    ).status_code == 200
+
+    response = client.put(
+        f"/rentals/{rental['id']}/deposit/release"
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "rental_id": rental["id"],
+        "deposit_released": True,
+    }
+
+    saved = get_saved_rental(client, rental["id"])
+    assert saved["deposit_released"] is True
+    assert saved["deposit_amount"] == 50
+
+
+def test_deposit_cannot_be_released_before_return(client):
+    equipment = create_equipment(client)
+    renter = create_renter(client)
+    rental = checkout(client, equipment, renter, deposit_amount=50)
+
+    response = client.put(
+        f"/rentals/{rental['id']}/deposit/release"
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "Equipment has not been returned yet"
+    }
+    saved = get_saved_rental(client, rental["id"])
+    assert saved["deposit_released"] is False
+    assert saved["return_date"] is None
+
+
+@pytest.mark.parametrize("suffix", ["extend", "deposit/release"])
+def test_missing_rental_actions_return_error(client, suffix):
+    response = client.put(
+        f"/rentals/999/{suffix}", json={"days": 3}
+    )
+
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Rental not found"}
