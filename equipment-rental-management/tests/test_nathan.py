@@ -97,3 +97,66 @@ def test_missing_renter_returns_error(client, method):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Renter not found"}
+    
+
+def test_list_rentals_preserves_active_and_returned_records(client):
+    equipment = create_equipment(client)
+    renter = create_renter(client)
+
+    first = checkout(client, equipment, renter)
+    second = checkout(client, equipment, renter)
+
+    returned = client.put(f"/rentals/{first['id']}/return")
+    assert returned.status_code == 200
+
+    response = client.get("/rentals")
+    assert response.status_code == 200
+    records = {r["id"]: r for r in response.get_json()}
+
+    assert set(records) == {first["id"], second["id"]}
+    assert records[first["id"]]["return_date"] is not None
+    assert records[second["id"]]["return_date"] is None
+    assert all(r["equipment_id"] == equipment["id"]
+               for r in records.values())
+    assert all(r["renter_id"] == renter["id"]
+               for r in records.values())
+
+
+def test_filter_rentals_by_renter_returns_only_that_renters_records(client):
+    """Expected to fail: the route compares equipment_id to renter_id."""
+    first_renter = create_renter(client)
+    second_renter = create_renter(client, "Sam", "sam@example.com")
+    equipment = create_equipment(client)
+
+    # Cross the IDs so a mistaken equipment-ID filter cannot pass by chance.
+    expected = checkout(client, equipment, second_renter)
+    checkout(client, equipment, first_renter)
+
+    response = client.get(
+        "/rentals",
+        query_string={"renter_id": second_renter["id"]},
+    )
+
+    assert response.status_code == 200
+    records = response.get_json()
+    assert [r["id"] for r in records] == [expected["id"]]
+    assert all(r["renter_id"] == second_renter["id"] for r in records)
+
+
+def test_filter_rentals_by_equipment_excludes_other_equipment(client):
+    first = create_equipment(client, "Drill")
+    second = create_equipment(client, "Ladder")
+    renter = create_renter(client)
+
+    expected = checkout(client, first, renter)
+    checkout(client, second, renter)
+
+    response = client.get(
+        "/rentals",
+        query_string={"equipment_id": first["id"]},
+    )
+
+    assert response.status_code == 200
+    records = response.get_json()
+    assert [r["id"] for r in records] == [expected["id"]]
+    assert all(r["equipment_id"] == first["id"] for r in records)
