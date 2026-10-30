@@ -3,6 +3,8 @@ from datetime import date
 import pytest
 
 
+# Creates a renter through the API and returns the created record.
+# Used as a helper to reduce duplicate setup code in tests.
 def create_renter(client, name="Alex", email="alex@example.com"):
     response = client.post("/renters", json={
         "name": name,
@@ -12,6 +14,8 @@ def create_renter(client, name="Alex", email="alex@example.com"):
     return response.get_json()
 
 
+# Creates an equipment item through the API and returns the created record.
+# Used by rental-related tests.
 def create_equipment(client, name="Drill"):
     response = client.post("/equipment", json={
         "name": name,
@@ -22,6 +26,8 @@ def create_equipment(client, name="Drill"):
     return response.get_json()
 
 
+# Creates a rental (equipment checkout) and returns the rental record.
+# Allows tests to quickly set up rental scenarios.
 def checkout(client, equipment, renter, deposit_amount=0):
     response = client.post("/rentals", json={
         "equipment_id": equipment["id"],
@@ -32,10 +38,14 @@ def checkout(client, equipment, renter, deposit_amount=0):
     return response.get_json()
 
 
+# Retrieves a specific rental from the list endpoint.
+# Useful for verifying that updates have been persisted.
 def get_saved_rental(client, rental_id):
     records = client.get("/rentals").get_json()
     return next(record for record in records if record["id"] == rental_id)
 
+#  Verifies that a newly created renter is stored correctly,
+# including automatic generation of membership_date and ID.
 def test_create_renter_saves_fields_and_membership_date(client):
     renter = create_renter(client)
 
@@ -49,6 +59,7 @@ def test_create_renter_saves_fields_and_membership_date(client):
     assert saved["id"] == renter["id"]
 
 
+# Ensures the renter listing endpoint returns all created renters.
 def test_list_renters_contains_both_created_records(client):
     first = create_renter(client)
     second = create_renter(client, "Sam", "sam@example.com")
@@ -61,6 +72,7 @@ def test_list_renters_contains_both_created_records(client):
     assert {r["name"] for r in records} == {"Alex", "Sam"}
 
 
+# Confirms renter updates are persisted while unrelated fields remain unchanged.
 def test_update_renter_persists_and_preserves_other_fields(client):
     renter = create_renter(client)
 
@@ -76,6 +88,8 @@ def test_update_renter_persists_and_preserves_other_fields(client):
     assert saved["membership_date"] == renter["membership_date"]
 
 
+# Verifies that deleting a renter removes only that renter
+# and leaves other renter records intact.
 def test_delete_renter_removes_only_selected_record(client):
     first = create_renter(client)
     second = create_renter(client, "Sam", "sam@example.com")
@@ -88,6 +102,8 @@ def test_delete_renter_removes_only_selected_record(client):
     assert [r["id"] for r in remaining] == [second["id"]]
 
 
+# Ensures all renter operations return a 404 error
+# when the specified renter does not exist.
 @pytest.mark.parametrize("method", ["get", "put", "delete"])
 def test_missing_renter_returns_error(client, method):
     if method == "put":
@@ -99,6 +115,8 @@ def test_missing_renter_returns_error(client, method):
     assert response.get_json() == {"error": "Renter not found"}
 
 
+# Verifies the rentals listing includes both active and returned rentals
+# and preserves their correct status information.
 def test_list_rentals_preserves_active_and_returned_records(client):
     equipment = create_equipment(client)
     renter = create_renter(client)
@@ -122,6 +140,11 @@ def test_list_rentals_preserves_active_and_returned_records(client):
                for r in records.values())
 
 
+# Confirms filtering rentals by renter returns only rentals
+# that belong to the specified renter.
+#
+# Expected to fail because the current implementation compares
+# equipment_id against renter_id instead of renter_id.
 def test_filter_rentals_by_renter_returns_only_that_renters_records(client):
     """Expected to fail: the route compares equipment_id to renter_id."""
     first_renter = create_renter(client)
@@ -143,6 +166,8 @@ def test_filter_rentals_by_renter_returns_only_that_renters_records(client):
     assert all(r["renter_id"] == second_renter["id"] for r in records)
 
 
+# Ensures filtering rentals by equipment returns only rentals
+# associated with the selected equipment item.
 def test_filter_rentals_by_equipment_excludes_other_equipment(client):
     first = create_equipment(client, "Drill")
     second = create_equipment(client, "Ladder")
@@ -162,6 +187,8 @@ def test_filter_rentals_by_equipment_excludes_other_equipment(client):
     assert all(r["equipment_id"] == first["id"] for r in records)
 
 
+# Verifies rental extensions correctly update the due date
+# without affecting return status or equipment availability.
 def test_extend_rental_saves_new_due_date(client):
     equipment = create_equipment(client)
     renter = create_renter(client)
@@ -185,6 +212,8 @@ def test_extend_rental_saves_new_due_date(client):
     ).get_json()["available_units"] == 2
 
 
+# Ensures a returned rental cannot be extended and that
+# its original due date remains unchanged.
 def test_returned_rental_cannot_be_extended(client):
     equipment = create_equipment(client)
     renter = create_renter(client)
@@ -206,6 +235,10 @@ def test_returned_rental_cannot_be_extended(client):
     )["due_date"] == rental["due_date"]
 
 
+# Verifies deposit release is recorded after a rental is returned.
+#
+# Expected to fail because the endpoint reports success but
+# does not save the deposit_released flag.
 def test_deposit_release_is_saved_after_return(client):
     """Expected to fail: release responds True but does not save the flag."""
     equipment = create_equipment(client)
@@ -230,6 +263,8 @@ def test_deposit_release_is_saved_after_return(client):
     assert saved["deposit_amount"] == 50
 
 
+# Ensures deposits cannot be released until the equipment
+# has been returned.
 def test_deposit_cannot_be_released_before_return(client):
     equipment = create_equipment(client)
     renter = create_renter(client)
@@ -248,6 +283,8 @@ def test_deposit_cannot_be_released_before_return(client):
     assert saved["return_date"] is None
 
 
+# Verifies rental-specific actions return a 404 error
+# when the requested rental does not exist.
 @pytest.mark.parametrize("suffix", ["extend", "deposit/release"])
 def test_missing_rental_actions_return_error(client, suffix):
     response = client.put(
