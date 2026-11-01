@@ -58,6 +58,14 @@ app working without a REST client, and calls the same in-memory store.
 
 ## Tests
 
+
+Enhancement: Fixed rental filtering by renter ID.
+
+Previously, filtering rentals using the renter_id query parameter compared
+equipment IDs instead of renter IDs, resulting in incorrect results.
+The filtering logic was corrected and additional tests were added to verify
+proper renter-based filtering.
+
 ```bash
 pytest
 ```

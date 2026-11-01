@@ -293,3 +293,16 @@ def test_missing_rental_actions_return_error(client, suffix):
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Rental not found"}
+
+
+# Verifies that filtering by renter ID returns only that renter's rentals.
+def test_filter_rentals_by_renter_returns_empty_when_no_matches(client):
+    renter = create_renter(client)
+
+    response = client.get(
+        "/rentals",
+        query_string={"renter_id": renter["id"]},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == []
