@@ -63,6 +63,14 @@ Equipment marked with `is_available: false` cannot be checked out through either
 
 ## Tests
 
+
+Enhancement: Fixed rental filtering by renter ID.
+
+Previously, filtering rentals using the renter_id query parameter compared
+equipment IDs instead of renter IDs, resulting in incorrect results.
+The filtering logic was corrected and additional tests were added to verify
+proper renter-based filtering.
+
 ```bash
 pytest
 ```

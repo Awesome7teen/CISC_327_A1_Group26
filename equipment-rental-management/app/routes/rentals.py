@@ -14,7 +14,7 @@ def list_rentals():
     renter_id = request.args.get("renter_id", type=int)
     equipment_id = request.args.get("equipment_id", type=int)
     if renter_id is not None:
-        results = [r for r in results if r.equipment_id == renter_id]
+        results = [r for r in results if r.renter_id == renter_id]
     if equipment_id is not None:
         results = [r for r in results if r.equipment_id == equipment_id]
     return jsonify([r.to_dict() for r in results])
