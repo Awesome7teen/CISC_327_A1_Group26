@@ -47,14 +47,19 @@ app working without a REST client, and calls the same in-memory store.
 | GET | `/equipment/<id>` | Get one equipment item |
 | PUT | `/equipment/<id>` | Update an equipment item |
 | DELETE | `/equipment/<id>` | Delete an equipment item |
+| PATCH | `/equipment/<id>` | Set service status using `{"is_available": false}` or `{"is_available": true}` |
 | GET | `/renters` | List all renters |
 | POST | `/renters` | Create a renter |
 | GET | `/renters/<id>` | Get one renter |
 | PUT | `/renters/<id>` | Update a renter |
 | DELETE | `/renters/<id>` | Delete a renter |
-| POST | `/rentals` | Check out equipment (`equipment_id`, `renter_id`) |
+| POST | `/rentals` | Check out equipment (`equipment_id`, `renter_id`). Rejects out-of-service equipment with HTTP 400. |
 | PUT | `/rentals/<id>/return` | Return rented equipment |
 | GET | `/rentals?renter_id=&equipment_id=` | Look up rentals |
+
+### Out-of-service equipment (RC-09)
+
+Equipment marked with `is_available: false` cannot be checked out through either the JSON API or the web checkout form. Both return HTTP 400 without creating a rental or changing available units. Setting `is_available: true` restores the equipment to service.
 
 ## Tests
 
