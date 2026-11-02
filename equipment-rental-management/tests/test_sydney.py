@@ -275,10 +275,75 @@ def test_repeated_return_does_not_increase_availability_twice(client):
         first_return.get_json()["return_date"]
     )
 
-
 def test_return_nonexistent_rental_returns_error(client):
     response = client.put("/rentals/999/return")
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Rental not found"}
     assert client.get("/rentals").get_json() == []
+
+def test_website_rejects_out_of_service_checkout(client):
+    item = create_equipment(client, total_units = 2)
+    renter = create_renter(client)
+
+    status_response = client.patch(
+        f"/equipment/{item['id']}/status",
+        json={"is_available": False},
+    )
+    assert status_response.status_code == 200
+
+    response = client.post("/ui/rentals", data={
+        "equipment_id": item["id"],
+        "renter_id": renter["id"],
+    })
+
+    assert response.status_code == 400
+    assert "Equipment is out of service" in response.get_data(as_text = True)
+
+    assert client.get("/rentals").get_json() == []
+    saved = client.get(f"/equipment/{item['id']}").get_json()
+    assert saved["available_units"] == 2
+    assert saved["is_available"] is False
+
+def test_checkout_succeeds_after_equipment_restored_to_service(client):
+    item = create_equipment(client, total_units = 1)
+    renter = create_renter(client)
+
+    response = client.patch(
+        f"/equipment/{item['id']}/status",
+        json={"is_available": False},
+    )
+    assert response.status_code == 200
+
+    rejected = client.post("/rentals", json={
+        "equipment_id": item["id"],
+        "renter_id": renter["id"],
+    })
+    assert rejected.status_code == 400
+    assert rejected.get_json() == {
+        "error": "Equipment is out of service"
+    }
+    assert client.get("/rentals").get_json() == []
+    assert client.get(f"/equipment/{item['id']}").get_json()["available_units"] == 1
+
+    restored = client.patch(
+        f"/equipment/{item['id']}/status",
+        json={"is_available": True},
+    )
+    assert restored.status_code == 200
+
+    checkout = client.post("/rentals", json={
+        "equipment_id": item["id"],
+        "renter_id": renter["id"],
+    })
+    assert checkout.status_code == 201
+    rental = checkout.get_json()
+
+    records = client.get("/rentals").get_json()
+    assert records == [rental]
+    assert rental["equipment_id"] == item["id"]
+    assert rental["renter_id"] == renter["id"]
+
+    saved = client.get(f"/equipment/{item['id']}").get_json()
+    assert saved["available_units"] == 0
+    assert saved["is_available"] is True

@@ -27,10 +27,8 @@ def checkout_equipment():
     if item is None:
         return jsonify({"error": "Equipment not found"}), 404
 
-    # BUG: does not check item.is_available — out-of-service equipment can
-    # still be checked out. The check below is intentionally absent:
-    #   if not item.is_available:
-    #       return jsonify({"error": "Equipment is out of service"}), 400
+    if not item.is_available:
+        return jsonify({"error": "Equipment is out of service"}), 400
     item.available_units -= 1
 
     rental_id = store.next_id("rental")
