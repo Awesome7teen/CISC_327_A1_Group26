@@ -133,5 +133,6 @@ def release_deposit(rental_id):
     if rental.return_date is None:
         return jsonify({"error": "Equipment has not been returned yet"}), 400
 
-    # BUG: rental.deposit_released is never set to True here — state is not persisted.
+    rental.deposit_released = True 
+    
     return jsonify({"rental_id": rental_id, "deposit_released": True})
