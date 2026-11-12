@@ -5,6 +5,8 @@ from flask import Blueprint, jsonify, request
 from app import store
 from app.models.rental import Rental
 
+from notification_service import send_notification
+
 rentals_bp = Blueprint("rentals", __name__, url_prefix="/rentals")
 
 
@@ -72,6 +74,47 @@ def extend_rental(rental_id):
     days = data.get("days", 1)
     rental.due_date = rental.due_date + timedelta(days=days)
     return jsonify(rental.to_dict())
+
+
+@rentals_bp.route("/<int:rental_id>/remind", methods=["POST"])
+def send_return_reminder(rental_id):
+    rental = store.rentals.get(rental_id)
+
+    if rental is None:
+        return jsonify({"error": "Rental not found"}), 404
+
+    if rental.return_date is not None:
+        return jsonify({"error": "Rental already returned"}), 400
+
+    if rental.due_date > date.today() + timedelta(days=1):
+        return jsonify({"error": "Reminder is not due yet"}), 400
+
+    renter = store.renters.get(rental.renter_id)
+    item = store.equipment.get(rental.equipment_id)
+
+    if renter is None or item is None:
+        return jsonify({"error": "Renter or equipment not found"}), 404
+
+    recipient = renter.email
+    subject = "Upcoming Equipment Return Reminder"
+
+    message = (
+        f"Hello {renter.name}, your rental for "
+        f"equipment ID {rental.equipment_id} is due "
+        f"on {rental.due_date.isoformat()}. "
+        "Please return it on time to avoid late fees."
+    )
+
+    notification_sent = send_notification(
+        recipient,
+        subject,
+        message
+    )
+
+    return jsonify({
+        "message": "Return reminder processed",
+        "notification_sent": notification_sent
+    })
 
 
 @rentals_bp.route("/<int:rental_id>/deposit/release", methods=["PUT"])
