@@ -129,6 +129,7 @@ def test_rental_with_unavailable_equipment(client):
         category="Tools",
         total_units=5,
         available_units=0,
+        is_available=False
     )
     store.equipment[1] = item
 

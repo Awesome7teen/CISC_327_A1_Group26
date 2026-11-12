@@ -133,6 +133,6 @@ def release_deposit(rental_id):
     if rental.return_date is None:
         return jsonify({"error": "Equipment has not been returned yet"}), 400
 
-    rental.deposit_released = True 
-    
+    rental.deposit_released = True
+
     return jsonify({"rental_id": rental_id, "deposit_released": True})
