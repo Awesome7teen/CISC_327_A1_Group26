@@ -1,3 +1,7 @@
+from datetime import date, timedelta
+from unittest.mock import patch
+from app import store
+
 def test_equipment_from_creates_item(client):
     response = client.post("/ui/equipment", data = {
         "name" : "Cordless Drill",
@@ -68,3 +72,57 @@ def test_renter_delete_form_removes_only_selected_renter(client):
 
     remaining = client.get("/renters").get_json()
     assert [renter["id"] for renter in remaining] == [second.get_json()["id"]]
+
+def create_rental_for_reminder(client, due_in_days):
+    equipment = client.post("/equipment", json = {
+        "name": "Drill",
+        "category": "Tools",
+        "total_units": 1,
+    })
+    assert equipment.status_code == 201
+
+    renter = client.post("/renters", json = {
+        "name" : "Sydney Kinnear",
+        "email" : "sydney@example.com",
+    })
+    assert renter.status_code == 201
+
+    rental = client.post("/rentals", json = {
+        "equipment_id" : equipment.get_json()["id"],
+        "renter_id" : renter.get_json()["id"],
+    })
+    assert rental.status_code == 201
+
+    rental_id = rental.get_json()["id"]
+    store.rentals[rental_id].due_date = date.today() + timedelta(days = due_in_days)
+    return rental_id
+
+def test_return_reminder_reports_notification_failure(client, monkeypatch):
+    rental_id = create_rental_for_reminder(client, due_in_days = 1)
+    rentals_before = client.get("/rentals").get_json()
+
+    monkeypatch.setattr(
+        "app.routes.rentals.send_notification",
+        lambda recipiant, subject, message: False,
+    )
+
+    response = client.post(f"/rentals/{rental_id}/remind")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "message" : "Return reminder processed",
+        "notification_sent" : False,
+    }
+    assert client.get("/rentals").get_json() == rentals_before
+
+def test_return_reminder_skips_notification_when_not_due(client):
+    rental_id = create_rental_for_reminder(client, due_in_days = 2)
+    rentals_before = client.get("/rentals").get_json()
+
+    with patch("app.routes.rentals.send_notification") as send_notification:
+        response = client.post(f"/rentals/{rental_id}/remind")
+        send_notification.assert_not_called()
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Reminder is not due yet"}
+    assert client.get("/rentals").get_json() == rentals_before
